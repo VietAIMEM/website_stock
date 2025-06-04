@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dự đoán cổ phiếu</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* Reset một số style mặc định */
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f4f7fa;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    h2 {
+      margin-bottom: 15px;
+      color: #222;
+      font-weight: 700;
+    }
+
+    #ticker-select {
+      padding: 10px 15px;
+      font-size: 16px;
+      border: 1.8px solid #4bc0c0;
+      border-radius: 8px;
+      background-color: #fff;
+      color: #333;
+      cursor: text;
+      transition: border-color 0.3s ease;
+      margin-bottom: 20px;
+      min-width: 220px;
+    }
+
+    #ticker-select:hover, #ticker-select:focus {
+      border-color: #36a2a2;
+      outline: none;
+    }
+
+    #result {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgb(0 0 0 / 0.1);
+      padding: 20px 25px;
+      width: 320px;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 17px;
+      color: #444;
+    }
+
+    #result h3 {
+      margin-top: 0;
+      color: #4bc0c0;
+      font-weight: 700;
+    }
+
+    #result p {
+      margin: 8px 0;
+      line-height: 1.4;
+    }
+
+    #stockChart {
+      max-width: 900px;
+      width: 100%;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgb(0 0 0 / 0.1);
+      padding: 15px;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      #result {
+        width: 90%;
+      }
+    }
+  </style>
+
+</head>
+<body>
+  <h2>Chọn mã cổ phiếu:</h2>
+  <input list="tickers-list" id="ticker-select" name="ticker-select" placeholder="Chọn hoặc nhập mã cổ phiếu" autocomplete="off" />
+  <datalist id="tickers-list"></datalist>
+
+  <div id="result"></div>
+  <canvas id="stockChart" width="1000" height="300"></canvas>
+
+  <script>
+    const apiUrl = "http://localhost:8000";  // Đổi nếu server online
+    let stockChart;
+
+    function createChart(labels, actualPrices, predictedPrice) {
+      const ctx = document.getElementById('stockChart').getContext('2d');
+      if (stockChart) {
+        stockChart.destroy();
+      }
+      // Chuẩn bị dữ liệu cho giá thực tế (61 điểm)
+      const actualData = actualPrices;
+      // Chuẩn bị dữ liệu cho giá dự đoán (chỉ 1 điểm cuối)
+      const predictedData = Array(actualPrices.length - 1).fill(null).concat([predictedPrice]);
+
+      stockChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Giá thực tế',
+              data: actualData,
+              borderColor: 'rgb(75, 192, 192)',
+              backgroundColor: 'rgba(75, 192, 192, 0.2)',
+              fill: false,
+              pointRadius: 3
+            },
+            {
+              label: 'Giá dự đoán',
+              data: predictedData,
+              borderColor: 'rgb(255, 99, 132)',
+              backgroundColor: 'rgba(255, 99, 132, 0.2)',
+              fill: false,
+              pointRadius: 5,
+              borderDash: [5, 5]
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: 'Thời gian'
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Giá (VND)'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: true
+            }
+          }
+        }
+      });
+    }
+
+    fetch(`${apiUrl}/tickers`)
+      .then(res => res.json())
+      .then(data => {
+        const input = document.getElementById("ticker-select");
+        const datalist = document.getElementById("tickers-list");
+
+        data.tickers.forEach(t => {
+          const option = document.createElement("option");
+          option.value = t;
+          datalist.appendChild(option);
+        });
+
+        input.addEventListener("change", () => {
+          const value = input.value.trim();
+          if (!value) return;
+
+          fetch(`${apiUrl}/predict/${value}`)
+            .then(res => res.json())
+            .then(data => {
+              document.getElementById("result").innerHTML = `
+                <h3>${data.ticker}</h3>
+                <p>Dự đoán phút tiếp theo: ${data.predicted_price}</p>
+                <p>Giá thực tế: ${data.actual_price}</p>
+                <p>Chênh lệch: ${data.error}</p>
+              `;
+              fetch(`${apiUrl}/history/${value}`)
+                .then(res => res.json())
+                .then(historyData => {
+                  const labels = historyData.history.map(h => new Date(h.datetime).toLocaleTimeString());
+                  const prices = historyData.history.map(h => h.close);
+                  createChart(labels, prices, data.predicted_price);
+                });
+            })
+            .catch(err => {
+              document.getElementById("result").innerHTML = `<p style="color:red;">Lỗi khi lấy dữ liệu dự đoán hoặc lịch sử.</p>`;
+              if (stockChart) stockChart.destroy();
+            });
+        });
+      })
+      .catch(err => {
+        document.getElementById("result").innerHTML = `<p style="color:red;">Lỗi khi tải danh sách mã cổ phiếu.</p>`;
+      });
+  </script>
+</body>
+</html>
