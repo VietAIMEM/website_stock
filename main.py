@@ -90,3 +90,6 @@ async def get_history(ticker: str):
         return {"history": history}
     except Exception as e:
         return {"error": str(e)}
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # Lấy port từ biến môi trường do Render cấp, mặc định 8000
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
